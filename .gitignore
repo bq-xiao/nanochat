@@ -9,3 +9,8 @@ eval_bundle/
 .env
 .idea
 data
+
+# Local setup
+.claude
+CLAUDE.md
+wandb/
