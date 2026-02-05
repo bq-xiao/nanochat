@@ -11,6 +11,5 @@ eval_bundle/
 data
 
 # Local setup
-.claude
 CLAUDE.md
 wandb/
