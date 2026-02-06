@@ -314,7 +314,7 @@ def disable_fp8(model):
 # Compile the model
 
 orig_model = model  # original, uncompiled model, for saving raw model state_dict and for inference/evaluation (because the shapes may change shape)
-# model = torch.compile(model, dynamic=False)  # the inputs to model will never change shape so dynamic=False is safe
+model = torch.compile(model, dynamic=False)  # the inputs to model will never change shape so dynamic=False is safe
 
 # -----------------------------------------------------------------------------
 # Initialize the Optimizer (combined MuonAdamW: Muon for matrix params, AdamW for rest)
@@ -454,7 +454,7 @@ while True:
             checkpoint_dir,
             step,
             orig_model.state_dict(),  # model parameters
-            optimizer.state_dict(),  # optimizer state
+            None,  # optimizer state
             {  # metadata saved as json
                 "step": step,
                 "val_bpb": val_bpb,  # loss at last step

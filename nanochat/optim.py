@@ -18,7 +18,7 @@ https://arxiv.org/abs/1711.05101
 """
 
 
-# @torch.compile(dynamic=False, fullgraph=True)
+@torch.compile(dynamic=False, fullgraph=True, backend="aot_eager")
 def adamw_step_fused(
         p: Tensor,  # (32768, 768) - parameter tensor
         grad: Tensor,  # (32768, 768) - gradient, same shape as p
@@ -94,7 +94,7 @@ polar_express_coeffs = [
 ]
 
 
-# @torch.compile(dynamic=False, fullgraph=True)
+@torch.compile(dynamic=False, fullgraph=True, backend="aot_eager")
 def muon_step_fused(
         stacked_grads: Tensor,  # (12, 768, 3072) - stacked gradients
         stacked_params: Tensor,  # (12, 768, 3072) - stacked parameters
@@ -390,7 +390,8 @@ class DistMuonAdamW(torch.optim.Optimizer):
                 param_infos[p] = dict(future=future, grad_slice=grad, is_small=True)
             else:
                 # Large params: reduce_scatter
-                assert grad.shape[0] % world_size == 0, f"AdamW reduce_scatter requires shape[0] ({grad.shape[0]}) divisible by world_size ({world_size})"
+                assert grad.shape[
+                           0] % world_size == 0, f"AdamW reduce_scatter requires shape[0] ({grad.shape[0]}) divisible by world_size ({world_size})"
                 rank_size = grad.shape[0] // world_size
                 grad_slice = torch.empty_like(grad[:rank_size])
                 future = dist.reduce_scatter_tensor(grad_slice, grad, op=dist.ReduceOp.AVG, async_op=True).get_future()
