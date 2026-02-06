@@ -387,6 +387,7 @@ else:
 
 # -----------------------------------------------------------------------------
 # Training loop
+epoch = 1
 while True:
     last_step = step == num_iterations  # loop runs num_iterations+1 times so that we can eval/save at the end
     flops_so_far = num_flops_per_token * args.total_batch_size * step
@@ -485,7 +486,12 @@ while True:
         train_loss = loss.detach()  # for logging
         loss = loss / grad_accum_steps  # each .backward() is a grad sum => normalize loss here
         loss.backward()
-        batch_data = next(it)  # prefetch the next batch while the GPU is busy with forward/backward
+        try:
+            batch_data = next(it)  # prefetch the next batch while the GPU is busy with forward/backward
+        except StopIteration:
+            it = iter(train_loader)
+            batch_data = next(it)
+            epoch = epoch + 1
         x, y = batch_data['input_ids'], batch_data['labels']
     # step the optimizer
     lrm = get_lr_multiplier(step)
@@ -524,7 +530,7 @@ while True:
     else:
         eta_str = ""
     print0(
-        f"step {step:05d}/{num_iterations:05d} ({pct_done:.2f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt * 1000:.2f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.2f} | total time: {total_training_time / 60:.2f}m{eta_str}")
+        f"step {step:05d}/{num_iterations:05d} ({pct_done:.2f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt * 1000:.2f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.2f} | epoch: {epoch} | total time: {total_training_time / 60:.2f}m{eta_str}")
     if step % 100 == 0:
         log_data = {
             "step": step,
