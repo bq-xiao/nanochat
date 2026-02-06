@@ -23,7 +23,7 @@ def prepare_for_dialogue(examples, tokenizer, block_size):
                 tokens.extend(tokenizer.encode(f"User: {turn['value']}"))
             else:
                 tokens.extend(tokenizer.encode(f"Assistant: {turn['value']}"))
-            tokens.append(tokenizer.eod)
+            tokens.append(tokenizer.eos_token_id)
         processed.extend(tokens)
 
     total = len(processed)
@@ -49,10 +49,10 @@ def get_dataloader(args, tokenizer):
         functools.partial(
             prepare_for_dialogue,
             tokenizer=tokenizer,
-            block_size=args.block_size
+            block_size=args.max_seq_len + 1
         ),
         batched=True,
-        batch_size=args.batch_size,
+        batch_size=args.device_batch_size,
         remove_columns=dataset.column_names,
         load_from_cache_file=True,
         num_proc=args.num_workers
@@ -64,10 +64,10 @@ def get_dataloader(args, tokenizer):
             functools.partial(
                 prepare_for_dialogue,
                 tokenizer=tokenizer,
-                block_size=args.block_size
+                block_size=args.max_seq_len + 1
             ),
             batched=True,
-            batch_size=args.batch_size,
+            batch_size=args.device_batch_size,
             remove_columns=eval_dataset.column_names,
             load_from_cache_file=True,
             num_proc=args.num_workers
@@ -84,12 +84,12 @@ def get_dataloader(args, tokenizer):
 
     train_loader = DataLoader(
         dataset,
-        batch_size=args.batch_size,
+        batch_size=args.device_batch_size,
         collate_fn=data_collator
     )
     eval_loader = DataLoader(
         eval_dataset,
-        batch_size=args.batch_size,
+        batch_size=args.device_batch_size,
         collate_fn=data_collator
     )
 

@@ -17,18 +17,19 @@ Good old AdamW optimizer, fused kernel.
 https://arxiv.org/abs/1711.05101
 """
 
-@torch.compile(dynamic=False, fullgraph=True)
+
+# @torch.compile(dynamic=False, fullgraph=True)
 def adamw_step_fused(
-    p: Tensor,              # (32768, 768) - parameter tensor
-    grad: Tensor,           # (32768, 768) - gradient, same shape as p
-    exp_avg: Tensor,        # (32768, 768) - first moment, same shape as p
-    exp_avg_sq: Tensor,     # (32768, 768) - second moment, same shape as p
-    step_t: Tensor,         # () - 0-D CPU tensor, step count
-    lr_t: Tensor,           # () - 0-D CPU tensor, learning rate
-    beta1_t: Tensor,        # () - 0-D CPU tensor, beta1
-    beta2_t: Tensor,        # () - 0-D CPU tensor, beta2
-    eps_t: Tensor,          # () - 0-D CPU tensor, epsilon
-    wd_t: Tensor,           # () - 0-D CPU tensor, weight decay
+        p: Tensor,  # (32768, 768) - parameter tensor
+        grad: Tensor,  # (32768, 768) - gradient, same shape as p
+        exp_avg: Tensor,  # (32768, 768) - first moment, same shape as p
+        exp_avg_sq: Tensor,  # (32768, 768) - second moment, same shape as p
+        step_t: Tensor,  # () - 0-D CPU tensor, step count
+        lr_t: Tensor,  # () - 0-D CPU tensor, learning rate
+        beta1_t: Tensor,  # () - 0-D CPU tensor, beta1
+        beta2_t: Tensor,  # () - 0-D CPU tensor, beta2
+        eps_t: Tensor,  # () - 0-D CPU tensor, epsilon
+        wd_t: Tensor,  # () - 0-D CPU tensor, weight decay
 ) -> None:
     """
     Fused AdamW step: weight_decay -> momentum_update -> bias_correction -> param_update
@@ -38,6 +39,10 @@ def adamw_step_fused(
     # Weight decay (decoupled, applied before the update)
     p.mul_(1 - lr_t * wd_t)
     # Update running averages (lerp_ is cleaner and fuses well)
+    if grad.dtype != beta1_t.dtype:
+        beta1_t = beta1_t.to(grad.data)
+    if grad.dtype != beta2_t.dtype:
+        beta2_t = beta2_t.to(grad.data)
     exp_avg.lerp_(grad, 1 - beta1_t)
     exp_avg_sq.lerp_(grad.square(), 1 - beta2_t)
     # Bias corrections
@@ -47,6 +52,7 @@ def adamw_step_fused(
     denom = (exp_avg_sq / bias2).sqrt() + eps_t
     step_size = lr_t / bias1
     p.add_(exp_avg / denom, alpha=-step_size)
+
 
 # -----------------------------------------------------------------------------
 """
@@ -87,18 +93,19 @@ polar_express_coeffs = [
     (2.3465413258596377, -1.7097828382687081, 0.42323551169305323),
 ]
 
-@torch.compile(dynamic=False, fullgraph=True)
+
+# @torch.compile(dynamic=False, fullgraph=True)
 def muon_step_fused(
-    stacked_grads: Tensor,          # (12, 768, 3072) - stacked gradients
-    stacked_params: Tensor,         # (12, 768, 3072) - stacked parameters
-    momentum_buffer: Tensor,        # (12, 768, 3072) - first moment buffer
-    second_momentum_buffer: Tensor, # (12, 768, 1) or (12, 1, 3072) - factored second moment
-    momentum_t: Tensor,             # () - 0-D CPU tensor, momentum coefficient
-    lr_t: Tensor,                   # () - 0-D CPU tensor, learning rate
-    wd_t: Tensor,                   # () - 0-D CPU tensor, weight decay
-    beta2_t: Tensor,                # () - 0-D CPU tensor, beta2 for second moment
-    ns_steps: int,                  # 5 - number of Newton-Schulz/Polar Express iterations
-    red_dim: int,                   # -1 or -2 - reduction dimension for variance
+        stacked_grads: Tensor,  # (12, 768, 3072) - stacked gradients
+        stacked_params: Tensor,  # (12, 768, 3072) - stacked parameters
+        momentum_buffer: Tensor,  # (12, 768, 3072) - first moment buffer
+        second_momentum_buffer: Tensor,  # (12, 768, 1) or (12, 1, 3072) - factored second moment
+        momentum_t: Tensor,  # () - 0-D CPU tensor, momentum coefficient
+        lr_t: Tensor,  # () - 0-D CPU tensor, learning rate
+        wd_t: Tensor,  # () - 0-D CPU tensor, weight decay
+        beta2_t: Tensor,  # () - 0-D CPU tensor, beta2 for second moment
+        ns_steps: int,  # 5 - number of Newton-Schulz/Polar Express iterations
+        red_dim: int,  # -1 or -2 - reduction dimension for variance
 ) -> None:
     """
     Fused Muon step: momentum -> polar_express -> variance_reduction -> cautious_update
@@ -114,12 +121,12 @@ def muon_step_fused(
     # Polar express
     X = g.bfloat16()
     X = X / (X.norm(dim=(-2, -1), keepdim=True) * 1.02 + 1e-6)
-    if g.size(-2) > g.size(-1): # Tall matrix
+    if g.size(-2) > g.size(-1):  # Tall matrix
         for a, b, c in polar_express_coeffs[:ns_steps]:
             A = X.mT @ X
             B = b * A + c * (A @ A)
             X = a * X + X @ B
-    else: # Wide matrix (original math)
+    else:  # Wide matrix (original math)
         for a, b, c in polar_express_coeffs[:ns_steps]:
             A = X @ X.mT
             B = b * A + c * (A @ A)
@@ -132,6 +139,8 @@ def muon_step_fused(
     red_dim_size = g.size(red_dim)
     v_norm_sq = v_mean.sum(dim=(-2, -1), keepdim=True) * red_dim_size
     v_norm = v_norm_sq.sqrt()
+    if second_momentum_buffer.dtype != beta2.dtype:
+        beta2 = beta2.to(dtype=second_momentum_buffer.dtype)
     second_momentum_buffer.lerp_(v_mean.to(dtype=second_momentum_buffer.dtype), 1 - beta2)
     step_size = second_momentum_buffer.clamp_min(1e-10).rsqrt()
     scaled_sq_sum = (v_mean * red_dim_size) * step_size.float().square()
@@ -144,6 +153,7 @@ def muon_step_fused(
     wd = wd_t.to(g.dtype)
     mask = (g * stacked_params) >= 0
     stacked_params.sub_(lr * g + lr * wd * stacked_params * mask)
+
 
 # -----------------------------------------------------------------------------
 # Single GPU version of the MuonAdamW optimizer.
@@ -175,6 +185,7 @@ class MuonAdamW(torch.optim.Optimizer):
             - For AdamW groups: 'lr', 'betas', 'eps', 'weight_decay'
             - For Muon groups: 'lr', 'momentum', 'ns_steps', 'beta2', 'weight_decay'
     """
+
     def __init__(self, param_groups: list[dict]):
         super().__init__(param_groups, defaults={})
         # 0-D CPU tensors to avoid torch.compile recompilation when values change
@@ -260,7 +271,7 @@ class MuonAdamW(torch.optim.Optimizer):
         # Fill all the 0-D tensors with current values
         self._muon_momentum_t.fill_(group["momentum"])
         self._muon_beta2_t.fill_(group["beta2"] if group["beta2"] is not None else 0.0)
-        self._muon_lr_t.fill_(group["lr"] * max(1.0, shape[-2] / shape[-1])**0.5)
+        self._muon_lr_t.fill_(group["lr"] * max(1.0, shape[-2] / shape[-1]) ** 0.5)
         self._muon_wd_t.fill_(group["weight_decay"])
 
         # Single fused kernel: momentum -> polar_express -> variance_reduction -> update
@@ -289,6 +300,7 @@ class MuonAdamW(torch.optim.Optimizer):
                 self._step_muon(group)
             else:
                 raise ValueError(f"Unknown optimizer kind: {group['kind']}")
+
 
 # -----------------------------------------------------------------------------
 # Distributed version of the MuonAdamW optimizer.
@@ -352,6 +364,7 @@ class DistMuonAdamW(torch.optim.Optimizer):
             - For AdamW groups: 'lr', 'betas', 'eps', 'weight_decay'
             - For Muon groups: 'lr', 'momentum', 'ns_steps', 'beta2', 'weight_decay'
     """
+
     def __init__(self, param_groups: list[dict]):
         super().__init__(param_groups, defaults={})
         # 0-D CPU tensors to avoid torch.compile recompilation when values change
@@ -477,7 +490,7 @@ class DistMuonAdamW(torch.optim.Optimizer):
             # Fill 0-D tensors and run fused kernel
             self._muon_momentum_t.fill_(group["momentum"])
             self._muon_beta2_t.fill_(group["beta2"])
-            self._muon_lr_t.fill_(group["lr"] * max(1.0, shape[-2] / shape[-1])**0.5)
+            self._muon_lr_t.fill_(group["lr"] * max(1.0, shape[-2] / shape[-1]) ** 0.5)
             self._muon_wd_t.fill_(group["weight_decay"])
             muon_step_fused(
                 grad_chunk[:num_owned], stacked_owned,

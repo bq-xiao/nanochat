@@ -83,6 +83,9 @@ parser.add_argument("--save-every", type=int, default=-1, help="save checkpoints
 # Output
 parser.add_argument("--model-tag", type=str, default=None, help="override model tag for checkpoint directory name")
 parser.add_argument("--tokenizer-model", type=str, default=None, required=True, help="tokenizer模型")
+parser.add_argument('--num_workers', type=int, default=1, required=False, help="dataloader加载数据时使用的线程数量")
+parser.add_argument('--train_data_file', default='data/multi_test.jsonl', type=str, required=True, help='训练数据集文件路径')
+parser.add_argument('--eval_data_file', default='data/multi_test.jsonl', type=str, required=False, help='验证数据集文件路径')
 args = parser.parse_args()
 user_config = vars(args).copy()  # for logging
 # -----------------------------------------------------------------------------
@@ -311,7 +314,7 @@ def disable_fp8(model):
 # Compile the model
 
 orig_model = model  # original, uncompiled model, for saving raw model state_dict and for inference/evaluation (because the shapes may change shape)
-model = torch.compile(model, dynamic=False)  # the inputs to model will never change shape so dynamic=False is safe
+# model = torch.compile(model, dynamic=False)  # the inputs to model will never change shape so dynamic=False is safe
 
 # -----------------------------------------------------------------------------
 # Initialize the Optimizer (combined MuonAdamW: Muon for matrix params, AdamW for rest)
@@ -332,7 +335,8 @@ if resuming:
 # -----------------------------------------------------------------------------
 # Initialize the DataLoaders for train/val
 train_loader, val_loader = get_dataloader(args, tokenizer)
-batch_data = next(train_loader)  # kick off load of the very first batch of data
+it = iter(train_loader)
+batch_data = next(it)  # kick off load of the very first batch of data
 x, y = batch_data['input_ids'], batch_data['labels']
 
 
@@ -481,7 +485,7 @@ while True:
         train_loss = loss.detach()  # for logging
         loss = loss / grad_accum_steps  # each .backward() is a grad sum => normalize loss here
         loss.backward()
-        batch_data = next(train_loader)  # prefetch the next batch while the GPU is busy with forward/backward
+        batch_data = next(it)  # prefetch the next batch while the GPU is busy with forward/backward
         x, y = batch_data['input_ids'], batch_data['labels']
     # step the optimizer
     lrm = get_lr_multiplier(step)
