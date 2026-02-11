@@ -86,6 +86,7 @@ parser.add_argument("--tokenizer-model", type=str, default=None, required=True, 
 parser.add_argument('--num_workers', type=int, default=1, required=False, help="dataloader加载数据时使用的线程数量")
 parser.add_argument('--train_data_file', default='data/multi_test.jsonl', type=str, required=True, help='训练数据集文件路径')
 parser.add_argument('--eval_data_file', default='data/multi_test.jsonl', type=str, required=False, help='验证数据集文件路径')
+parser.add_argument('--output_dir', default='train_ouput', type=str, required=False, help='hf trainer output dir')
 args = parser.parse_args()
 user_config = vars(args).copy()  # for logging
 # -----------------------------------------------------------------------------
@@ -185,7 +186,7 @@ model.to_empty(device=device)  # All tensors get storage on target device but wi
 model.init_weights()  # All tensors get initialized
 
 # If we are resuming, overwrite the model parameters with those of the checkpoint
-base_dir = './train_ouput'
+base_dir = args.output_dir
 output_dirname = args.model_tag if args.model_tag else f"d{args.depth}"  # e.g. d12
 checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
 resuming = args.resume_from_step != -1
