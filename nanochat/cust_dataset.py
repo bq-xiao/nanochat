@@ -167,8 +167,8 @@ def get_dataloader(args, tokenizer):
         functools.partial(
             process_batch,
             tokenizer=tokenizer,
-            max_input_length=args.max_seq_len,
-            max_output_length=args.max_seq_len
+            max_input_length=args.max_seq_len // 2,
+            max_output_length=args.max_seq_len // 2
         ),
         batched=True,
         num_proc=args.num_workers,
@@ -193,8 +193,8 @@ def get_dataloader(args, tokenizer):
             functools.partial(
                 process_batch_eval,
                 tokenizer=tokenizer,
-                max_input_length=args.max_seq_len,
-                max_output_length=args.max_seq_len
+                max_input_length=args.max_seq_len // 2,
+                max_output_length=args.max_seq_len // 2
             ),
             batched=True,
             num_proc=args.num_workers,
