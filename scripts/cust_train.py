@@ -289,7 +289,7 @@ target_tokens = int(
     args.target_param_data_ratio * num_scaling_params)  # optimal tokens for the model we are about to train
 
 # Our reference model is d12, this is where a lot of hyperparameters are tuned and then transfered to higher depths (muP style)
-d12_ref = build_model_meta(12)  # creates the model on meta device
+d12_ref = build_model_meta(args.depth)  # creates the model on meta device
 D_REF = args.target_param_data_ratio * get_scaling_params(
     d12_ref)  # compute-optimal d12 training horizon in tokens (measured empirically)
 B_REF = 2 ** 19  # optimal batch size at d12 ~= 524,288 tokens (measured empirically)
