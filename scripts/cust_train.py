@@ -92,6 +92,7 @@ parser.add_argument('--num_workers', type=int, default=1, required=False, help="
 parser.add_argument('--train_data_file', default='data/multi_test.jsonl', type=str, required=True, help='训练数据集文件路径')
 parser.add_argument('--eval_data_file', default='data/multi_test.jsonl', type=str, required=False, help='验证数据集文件路径')
 parser.add_argument('--output_dir', default='train_ouput', type=str, required=False, help='hf trainer output dir')
+parser.add_argument('--grad-accum-steps', type=int, default=-1, required=False, help="grad accum steps")
 args = parser.parse_args()
 user_config = vars(args).copy()  # for logging
 # -----------------------------------------------------------------------------
@@ -422,6 +423,8 @@ tokens_per_fwdbwd = args.device_batch_size * args.max_seq_len  # tokens per iter
 world_tokens_per_fwdbwd = tokens_per_fwdbwd * ddp_world_size  # total tokens per iteration for all ranks
 assert total_batch_size % world_tokens_per_fwdbwd == 0
 grad_accum_steps = total_batch_size // world_tokens_per_fwdbwd
+if -1 != args.grad_accum_steps:
+    grad_accum_steps = args.grad_accum_steps
 print0(f"Tokens / micro-batch / rank: {args.device_batch_size} x {args.max_seq_len} = {tokens_per_fwdbwd:,}")
 print0(f"Tokens / micro-batch: {world_tokens_per_fwdbwd:,}")
 print0(f"Total batch size {total_batch_size:,} => gradient accumulation steps: {grad_accum_steps}")
